@@ -29,6 +29,40 @@
  */
 
 #include "json-builder.h"
+// be lazy, just redefine memory management functions to use freertos primitives from portable.h
+#include "FreeRTOS.h"
+#include <string.h>
+
+
+static void * default_malloc( size_t size)
+{
+	if( size == 0 )
+	{
+		return NULL;
+	}
+	return pvPortMalloc(size);
+}
+
+static void * default_calloc (size_t size, size_t num )
+{
+	if( size == 0 || num == 0)
+	{
+		return NULL;
+	}
+	void *buf = pvPortMalloc(size * num);
+	memset(buf, 0, size * num);
+	return buf;
+}
+
+static void default_free (void * ptr)
+{
+	vPortFree(ptr);
+}
+
+static void * default_realloc( void * ptr, size_t size )
+{
+	return pvPortRealloc( ptr, size );
+}
 
 #include <string.h>
 #include <assert.h>
@@ -75,7 +109,7 @@ static int builderize (json_value * value)
          json_char * name_copy;
          json_object_entry * entry = &value->u.object.values [i];
 
-         if (! (name_copy = (json_char *) malloc ((entry->name_length + 1) * sizeof (json_char))))
+         if (! (name_copy = (json_char *) default_malloc ((entry->name_length + 1) * sizeof (json_char))))
             return 0;
 
          memcpy (name_copy, entry->name, entry->name_length + 1);
@@ -127,7 +161,7 @@ static int get_serialize_flags (json_serialize_opts opts)
 
 json_value * json_array_new (size_t length)
 {
-    json_value * value = (json_value *) calloc (1, sizeof (json_builder_value));
+    json_value * value = (json_value *) default_calloc (1, sizeof (json_builder_value));
 
     if (!value)
        return NULL;
@@ -136,9 +170,9 @@ json_value * json_array_new (size_t length)
 
     value->type = json_array;
 
-    if (! (value->u.array.values = (json_value **) malloc (length * sizeof (json_value *))))
+    if (! (value->u.array.values = (json_value **) default_malloc (length * sizeof (json_value *))))
     {
-       free (value);
+       default_free (value);
        return NULL;
     }
 
@@ -160,7 +194,7 @@ json_value * json_array_push (json_value * array, json_value * value)
    }
    else
    {
-      json_value ** values_new = (json_value **) realloc
+      json_value ** values_new = (json_value **) default_realloc
             (array->u.array.values, sizeof (json_value *) * (array->u.array.length + 1));
 
       if (!values_new)
@@ -179,7 +213,7 @@ json_value * json_array_push (json_value * array, json_value * value)
 
 json_value * json_object_new (size_t length)
 {
-    json_value * value = (json_value *) calloc (1, sizeof (json_builder_value));
+    json_value * value = (json_value *) default_calloc (1, sizeof (json_builder_value));
 
     if (!value)
        return NULL;
@@ -188,10 +222,10 @@ json_value * json_object_new (size_t length)
 
     value->type = json_object;
 
-    if (! (value->u.object.values = (json_object_entry *) calloc
+    if (! (value->u.object.values = (json_object_entry *) default_calloc
            (length, sizeof (*value->u.object.values))))
     {
-       free (value);
+       default_free (value);
        return NULL;
     }
 
@@ -215,7 +249,7 @@ json_value * json_object_push_length (json_value * object,
 
    assert (object->type == json_object);
 
-   if (! (name_copy = (json_char *) malloc ((name_length + 1) * sizeof (json_char))))
+   if (! (name_copy = (json_char *) default_malloc ((name_length + 1) * sizeof (json_char))))
       return NULL;
    
    memcpy (name_copy, name, name_length * sizeof (json_char));
@@ -223,7 +257,7 @@ json_value * json_object_push_length (json_value * object,
 
    if (!json_object_push_nocopy (object, name_length, name_copy, value))
    {
-      free (name_copy);
+      default_free (name_copy);
       return NULL;
    }
 
@@ -248,7 +282,7 @@ json_value * json_object_push_nocopy (json_value * object,
    else
    {
       json_object_entry * values_new = (json_object_entry *)
-            realloc (object->u.object.values, sizeof (*object->u.object.values)
+            default_realloc (object->u.object.values, sizeof (*object->u.object.values)
                             * (object->u.object.length + 1));
 
       if (!values_new)
@@ -278,7 +312,7 @@ json_value * json_string_new (const json_char * buf)
 json_value * json_string_new_length (unsigned int length, const json_char * buf)
 {
    json_value * value;
-   json_char * copy = (json_char *) malloc ((length + 1) * sizeof (json_char));
+   json_char * copy = (json_char *) default_malloc ((length + 1) * sizeof (json_char));
 
    if (!copy)
       return NULL;
@@ -288,7 +322,7 @@ json_value * json_string_new_length (unsigned int length, const json_char * buf)
 
    if (! (value = json_string_new_nocopy (length, copy)))
    {
-      free (copy);
+      default_free (copy);
       return NULL;
    }
 
@@ -297,7 +331,7 @@ json_value * json_string_new_length (unsigned int length, const json_char * buf)
 
 json_value * json_string_new_nocopy (unsigned int length, json_char * buf)
 {
-   json_value * value = (json_value *) calloc (1, sizeof (json_builder_value));
+   json_value * value = (json_value *) default_calloc (1, sizeof (json_builder_value));
    
    if (!value)
       return NULL;
@@ -313,7 +347,7 @@ json_value * json_string_new_nocopy (unsigned int length, json_char * buf)
 
 json_value * json_integer_new (json_int_t integer)
 {
-   json_value * value = (json_value *) calloc (1, sizeof (json_builder_value));
+   json_value * value = (json_value *) default_calloc (1, sizeof (json_builder_value));
    
    if (!value)
       return NULL;
@@ -328,7 +362,7 @@ json_value * json_integer_new (json_int_t integer)
 
 json_value * json_double_new (double dbl)
 {
-   json_value * value = (json_value *) calloc (1, sizeof (json_builder_value));
+   json_value * value = (json_value *) default_calloc (1, sizeof (json_builder_value));
    
    if (!value)
       return NULL;
@@ -343,7 +377,7 @@ json_value * json_double_new (double dbl)
 
 json_value * json_boolean_new (int b)
 {
-   json_value * value = (json_value *) calloc (1, sizeof (json_builder_value));
+   json_value * value = (json_value *) default_calloc (1, sizeof (json_builder_value));
    
    if (!value)
       return NULL;
@@ -358,7 +392,7 @@ json_value * json_boolean_new (int b)
 
 json_value * json_null_new (void)
 {
-   json_value * value = (json_value *) calloc (1, sizeof (json_builder_value));
+   json_value * value = (json_value *) default_calloc (1, sizeof (json_builder_value));
    
    if (!value)
       return NULL;
@@ -430,7 +464,7 @@ json_value * json_object_merge (json_value * objectA, json_value * objectB)
               + objectB->u.object.length;
 
       if (! (values_new = (json_object_entry *)
-            realloc (objectA->u.object.values, sizeof (json_object_entry) * alloc)))
+            default_realloc (objectA->u.object.values, sizeof (json_object_entry) * alloc)))
       {
           return NULL;
       }
@@ -448,8 +482,8 @@ json_value * json_object_merge (json_value * objectA, json_value * objectB)
 
    objectA->u.object.length += objectB->u.object.length;
 
-   free (objectB->u.object.values);
-   free (objectB);
+   default_free (objectB->u.object.values);
+   default_free (objectB);
 
    return objectA;
 }
@@ -943,7 +977,7 @@ void json_builder_free (json_value * value)
 
             if (!value->u.array.length)
             {
-               free (value->u.array.values);
+               default_free (value->u.array.values);
                break;
             }
 
@@ -954,7 +988,7 @@ void json_builder_free (json_value * value)
 
             if (!value->u.object.length)
             {
-               free (value->u.object.values);
+               default_free (value->u.object.values);
                break;
             }
 
@@ -966,7 +1000,7 @@ void json_builder_free (json_value * value)
                 * values, they are part of the same allocation as the values array
                 * itself.
                 */
-               free (value->u.object.values [value->u.object.length].name);
+               default_free (value->u.object.values [value->u.object.length].name);
             }
 
             value = value->u.object.values [value->u.object.length].value;
@@ -974,7 +1008,7 @@ void json_builder_free (json_value * value)
 
          case json_string:
 
-            free (value->u.string.ptr);
+            default_free (value->u.string.ptr);
             break;
 
          default:
@@ -983,7 +1017,7 @@ void json_builder_free (json_value * value)
 
       cur_value = value;
       value = value->parent;
-      free (cur_value);
+      default_free (cur_value);
    }
 }
 
